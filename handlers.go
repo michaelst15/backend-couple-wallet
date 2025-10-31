@@ -157,12 +157,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🔹 Ambil semua pemasukan user + other_transaction
-	pemasukanMap := make(map[string]float64)
+	// ======================================================
+	// 🔹 Ambil semua pemasukan user + other_transaction (dengan id)
+	// ======================================================
+	var pemasukanHarian []map[string]interface{}
 
 	// dari user_transactions
 	pemasukanRows, err := DB.Query(context.Background(), `
-		SELECT tanggal_update::date AS tanggal_update, pemasukan
+		SELECT id, tanggal_update::date, pemasukan
 		FROM user_transactions
 		WHERE user_id = $1 AND room_id = $2 AND pemasukan > 0
 		ORDER BY tanggal_update ASC
@@ -174,17 +176,24 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	defer pemasukanRows.Close()
 
 	for pemasukanRows.Next() {
-		var tanggal time.Time
-		var amount float64
-		if err := pemasukanRows.Scan(&tanggal, &amount); err == nil {
-			key := tanggal.Format("2006-01-02")
-			pemasukanMap[key] += amount
+		var (
+			id      int
+			tanggal time.Time
+			amount  float64
+		)
+		if err := pemasukanRows.Scan(&id, &tanggal, &amount); err == nil {
+			pemasukanHarian = append(pemasukanHarian, map[string]interface{}{
+				"id":        id,
+				"tanggal":   tanggal.Format("2006-01-02"),
+				"pemasukan": amount,
+				"sumber":    "user_transactions",
+			})
 		}
 	}
 
 	// dari other_transaction
 	otherPemasukanRows, err := DB.Query(context.Background(), `
-		SELECT tanggal_update::date AS tanggal_update, nominal
+		SELECT id, tanggal_update::date, nominal
 		FROM other_transaction
 		WHERE user_id = $1 AND room_id = $2 AND jenis = 'Pemasukan'
 		ORDER BY tanggal_update ASC
@@ -196,29 +205,29 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	defer otherPemasukanRows.Close()
 
 	for otherPemasukanRows.Next() {
-		var tanggal time.Time
-		var nominal float64
-		if err := otherPemasukanRows.Scan(&tanggal, &nominal); err == nil {
-			key := tanggal.Format("2006-01-02")
-			pemasukanMap[key] += nominal
+		var (
+			id      int
+			tanggal time.Time
+			nominal float64
+		)
+		if err := otherPemasukanRows.Scan(&id, &tanggal, &nominal); err == nil {
+			pemasukanHarian = append(pemasukanHarian, map[string]interface{}{
+				"id":        id,
+				"tanggal":   tanggal.Format("2006-01-02"),
+				"pemasukan": nominal,
+				"sumber":    "other_transaction",
+			})
 		}
 	}
 
-	// ubah map jadi slice
-	var pemasukanHarian []map[string]interface{}
-	for tanggal, total := range pemasukanMap {
-		pemasukanHarian = append(pemasukanHarian, map[string]interface{}{
-			"tanggal":   tanggal,
-			"pemasukan": total,
-		})
-	}
-
-	// 🔹 Ambil semua pengeluaran user + other_transaction
-	pengeluaranMap := make(map[string]float64)
+	// ======================================================
+	// 🔹 Ambil semua pengeluaran user + other_transaction (dengan id)
+	// ======================================================
+	var pengeluaranHarian []map[string]interface{}
 
 	// dari user_transactions
 	pengeluaranRows, err := DB.Query(context.Background(), `
-		SELECT tanggal_update::date AS tanggal_update, pengeluaran
+		SELECT id, tanggal_update::date, pengeluaran
 		FROM user_transactions
 		WHERE user_id = $1 AND room_id = $2 AND pengeluaran > 0
 		ORDER BY tanggal_update ASC
@@ -230,17 +239,24 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	defer pengeluaranRows.Close()
 
 	for pengeluaranRows.Next() {
-		var tanggal time.Time
-		var amount float64
-		if err := pengeluaranRows.Scan(&tanggal, &amount); err == nil {
-			key := tanggal.Format("2006-01-02")
-			pengeluaranMap[key] += amount
+		var (
+			id      int
+			tanggal time.Time
+			amount  float64
+		)
+		if err := pengeluaranRows.Scan(&id, &tanggal, &amount); err == nil {
+			pengeluaranHarian = append(pengeluaranHarian, map[string]interface{}{
+				"id":          id,
+				"tanggal":     tanggal.Format("2006-01-02"),
+				"pengeluaran": amount,
+				"sumber":      "user_transactions",
+			})
 		}
 	}
 
 	// dari other_transaction
 	otherPengeluaranRows, err := DB.Query(context.Background(), `
-		SELECT tanggal_update::date AS tanggal_update, nominal
+		SELECT id, tanggal_update::date, nominal
 		FROM other_transaction
 		WHERE user_id = $1 AND room_id = $2 AND jenis = 'Pengeluaran'
 		ORDER BY tanggal_update ASC
@@ -252,24 +268,24 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	defer otherPengeluaranRows.Close()
 
 	for otherPengeluaranRows.Next() {
-		var tanggal time.Time
-		var nominal float64
-		if err := otherPengeluaranRows.Scan(&tanggal, &nominal); err == nil {
-			key := tanggal.Format("2006-01-02")
-			pengeluaranMap[key] += nominal
+		var (
+			id      int
+			tanggal time.Time
+			nominal float64
+		)
+		if err := otherPengeluaranRows.Scan(&id, &tanggal, &nominal); err == nil {
+			pengeluaranHarian = append(pengeluaranHarian, map[string]interface{}{
+				"id":          id,
+				"tanggal":     tanggal.Format("2006-01-02"),
+				"pengeluaran": nominal,
+				"sumber":      "other_transaction",
+			})
 		}
 	}
 
-	// ubah map jadi slice
-	var pengeluaranHarian []map[string]interface{}
-	for tanggal, total := range pengeluaranMap {
-		pengeluaranHarian = append(pengeluaranHarian, map[string]interface{}{
-			"tanggal":     tanggal,
-			"pengeluaran": total,
-		})
-	}
-
+	// ======================================================
 	// 🔹 Susun respon JSON
+	// ======================================================
 	response := map[string]interface{}{
 		"message":                 "Login berhasil",
 		"user_id":                 userID,
@@ -290,6 +306,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
 
 
 

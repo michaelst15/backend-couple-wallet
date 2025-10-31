@@ -17,6 +17,9 @@ func main() {
     http.HandleFunc("/pengeluaran", Pengeluaran)
 	http.HandleFunc("/transaksi-lainnya", TambahTransaksi)
 	http.HandleFunc("/get-transaksi", GetTransaksi)
+	http.HandleFunc("/edit-transaksi-user", EditTransaksiByID)
+	http.HandleFunc("/hapus-transaksi-user", HapusTransaksiByID)
+	http.HandleFunc("/seluruh-transaksi", GetAllTransactionsByRoom)
 
 	port := 8080
 	fmt.Printf("🚀 Server berjalan di http://localhost:%d\n", port)
