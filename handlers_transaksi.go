@@ -14,6 +14,17 @@ import (
 // ===========================
 // 🔹 Handler: Tambah Pemasukan
 // ===========================
+var loc *time.Location
+
+func init() {
+    // Inisialisasi lokasi waktu Asia/Jakarta saat program dijalankan
+    var err error
+    loc, err = time.LoadLocation("Asia/Jakarta")
+    if err != nil {
+        loc = time.FixedZone("WIB", 7*3600) // fallback manual ke GMT+7
+    }
+}
+
 func Pemasukan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Hanya POST method yang diizinkan", http.StatusMethodNotAllowed)
@@ -59,7 +70,7 @@ func Pemasukan(w http.ResponseWriter, r *http.Request) {
 		"room_id":  req.RoomID,
 		"user_id":  req.UserID,
 		"summary":  summary,
-		"datetime": time.Now().Format(time.RFC3339),
+		"datetime": time.Now().In(loc).Format(time.RFC3339),
 	})
 }
 
@@ -111,7 +122,7 @@ func Pengeluaran(w http.ResponseWriter, r *http.Request) {
 		"room_id":  req.RoomID,
 		"user_id":  req.UserID,
 		"summary":  summary,
-		"datetime": time.Now().Format(time.RFC3339),
+		"datetime": time.Now().In(loc).Format(time.RFC3339),
 	})
 }
 
@@ -308,7 +319,7 @@ func TambahTransaksi(w http.ResponseWriter, r *http.Request) {
         "nominal":     req.Nominal,
         "keterangan":  req.Keterangan,
         "total_saldo": currentSaldo,
-        "datetime":    time.Now().Format(time.RFC3339),
+        "datetime": time.Now().In(loc).Format(time.RFC3339),
     })
 }
 
@@ -567,6 +578,124 @@ func EditTransaksiByID(w http.ResponseWriter, r *http.Request) {
         "perubahan_saldo":  perubahanSaldo,
     })
 }
+
+
+func EditOtherTransaksiByID(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPut {
+        http.Error(w, "Hanya PUT method yang diizinkan", http.StatusMethodNotAllowed)
+        return
+    }
+
+    type EditRequest struct {
+        ID      int     `json:"id"`
+        Jenis   string  `json:"jenis"`
+        Nominal float64 `json:"nominal"`
+    }
+
+    var req EditRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "JSON tidak valid", http.StatusBadRequest)
+        return
+    }
+
+    if req.ID == 0 {
+        http.Error(w, "id wajib diisi", http.StatusBadRequest)
+        return
+    }
+    if req.Jenis == "" {
+        http.Error(w, "jenis wajib diisi", http.StatusBadRequest)
+        return
+    }
+
+    // 🔹 Ambil data transaksi lama
+    var oldNominal float64
+    var oldJenis, oldKategori string
+    var userID, roomID int
+    err := DB.QueryRow(context.Background(),
+        `SELECT user_id, room_id, jenis, kategori, nominal 
+         FROM other_transaction WHERE id = $1`, req.ID).
+        Scan(&userID, &roomID, &oldJenis, &oldKategori, &oldNominal)
+    if err != nil {
+        http.Error(w, "Transaksi tidak ditemukan: "+err.Error(), http.StatusNotFound)
+        return
+    }
+
+    // 🔹 Ambil total saldo sekarang
+    var totalSaldo float64
+    err = DB.QueryRow(context.Background(),
+        `SELECT total_saldo FROM room_balance WHERE room_id = $1`, roomID).
+        Scan(&totalSaldo)
+    if err != nil {
+        http.Error(w, "Gagal mengambil saldo: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    var perubahanSaldo float64
+
+    // 🔹 CASE 1: Jenis transaksi tidak berubah
+    if oldJenis == req.Jenis {
+        if req.Jenis == "Pemasukan" {
+            // Tambah/kurangi sesuai selisih nominal
+            perubahanSaldo = req.Nominal - oldNominal
+        } else if req.Jenis == "Pengeluaran" {
+            // Jika nominal pengeluaran naik → saldo turun, jika turun → saldo naik
+            perubahanSaldo = oldNominal - req.Nominal
+        }
+
+    } else {
+        // 🔹 CASE 2: Jenis transaksi berubah
+        if oldJenis == "Pemasukan" && req.Jenis == "Pengeluaran" {
+            // Dulu nambah saldo, sekarang malah ngurangin saldo
+            perubahanSaldo = -(oldNominal + req.Nominal)
+        } else if oldJenis == "Pengeluaran" && req.Jenis == "Pemasukan" {
+            // Dulu ngurangin saldo, sekarang nambah saldo
+            perubahanSaldo = oldNominal + req.Nominal
+        }
+    }
+
+    // 🔹 Update data transaksi
+    _, err = DB.Exec(context.Background(),
+        `UPDATE other_transaction 
+         SET jenis=$1, nominal=$2, tanggal_update=NOW()
+         WHERE id=$3`,
+        req.Jenis, req.Nominal, req.ID)
+    if err != nil {
+        http.Error(w, "Gagal memperbarui transaksi: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // 🔹 Update saldo room_balance
+    _, err = DB.Exec(context.Background(),
+        `UPDATE room_balance 
+         SET total_saldo = total_saldo + $1, tanggal_update = NOW()
+         WHERE room_id = $2`,
+        perubahanSaldo, roomID)
+    if err != nil {
+        http.Error(w, "Gagal memperbarui saldo: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // 🔹 Kirim respon sukses
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "status":          "success",
+        "message":         "Transaksi berhasil diperbarui",
+        "id":              req.ID,
+        "user_id":         userID,
+        "room_id":         roomID,
+        "jenis_lama":      oldJenis,
+        "kategori_lama":   oldKategori,
+        "nominal_lama":    oldNominal,
+        "jenis_baru":      req.Jenis,
+        "nominal_baru":    req.Nominal,
+        "perubahan_saldo": perubahanSaldo,
+    })
+}
+
+
+
+
+
 
 // ==========================
 // 🔹 API: Ambil Data other_transaction berdasarkan room_id
