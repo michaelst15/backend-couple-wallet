@@ -17,7 +17,7 @@ func main() {
     http.HandleFunc("/pengeluaran", Pengeluaran)
 	http.HandleFunc("/transaksi-lainnya", TambahTransaksi)
 	http.HandleFunc("/get-transaksi", GetTransaksi)
-	http.HandleFunc("/edit-transaksi-user", EditTransaksiByID)
+	http.HandleFunc("/edit-transaksi-user", EditTransaksiUserByID)
 	http.HandleFunc("/edit-transaksi-lainnya", EditOtherTransaksiByID)
 	http.HandleFunc("/hapus-transaksi-user", HapusTransaksiByID)
 	http.HandleFunc("/seluruh-transaksi", GetAllTransactionsByRoom)

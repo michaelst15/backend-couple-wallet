@@ -463,7 +463,7 @@ func HapusTransaksiByID(w http.ResponseWriter, r *http.Request) {
 // ==========================
 // 🔹 API: Edit Data user_transactions berdasarkan id
 // ==========================
-func EditTransaksiByID(w http.ResponseWriter, r *http.Request) {
+func EditTransaksiUserByID(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPut {
         http.Error(w, "Hanya PUT method yang diizinkan", http.StatusMethodNotAllowed)
         return
